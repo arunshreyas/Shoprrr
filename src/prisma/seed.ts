@@ -1,20 +1,18 @@
 import { db } from "./db.ts";
 
-const users = [
-  { email: "alice@prisma.io", username: "alice", name: "Alice" },
-  { email: "bob@prisma.io", username: "bob", name: "Bob" },
-  { email: "carol@prisma.io", username: "carol", name: "Carol" },
-];
-
 let pendingSeed: Promise<void> | undefined;
 
 async function runSeed(): Promise<void> {
-  for (const user of users) {
-    await db.orm.public.User.upsert({
-      create: user,
-      update: {},
-      conflictOn: { email: user.email },
-    });
+  try {
+    const existing = await db.orm.public.Shop.first();
+    if (!existing) {
+      await db.orm.public.Shop.create({
+        shopName: "Kirana Demo Store",
+        isDemo: true,
+      });
+    }
+  } catch {
+    // Database may not be initialized yet
   }
 }
 
@@ -25,3 +23,4 @@ export function seed(): Promise<void> {
   });
   return pendingSeed;
 }
+

@@ -3,17 +3,28 @@ import { seed } from "./seed.ts";
 
 export { db };
 
-export async function listUsers(limit = 10) {
-  await seed();
-  const users = await db.orm.public.User.select("id", "email", "username", "name", "createdAt").limit(limit).all();
-
-  return users.map((user) => ({
-    id: String(user.id),
-    email: user.email,
-    username: user.username ?? null,
-    name: user.name ?? null,
-    createdAt: user.createdAt?.toISOString() ?? null,
-  }));
+export interface StarterUser {
+  id: string;
+  email: string;
+  username: string | null;
+  name: string | null;
+  createdAt: string | null;
 }
 
-export type StarterUser = Awaited<ReturnType<typeof listUsers>>[number];
+export async function listUsers(limit = 10): Promise<StarterUser[]> {
+  await seed();
+  try {
+    const customers = await db.orm.public.Customer.select("id", "name", "phone", "createdAt").limit(limit).all();
+
+    return customers.map((customer) => ({
+      id: String(customer.id),
+      email: customer.phone ?? "no-phone",
+      username: customer.name,
+      name: customer.name,
+      createdAt: customer.createdAt ? new Date(customer.createdAt).toISOString() : null,
+    }));
+  } catch {
+    return [];
+  }
+}
+

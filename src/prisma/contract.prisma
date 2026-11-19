@@ -1,21 +1,54 @@
 // use prisma-8
 
-model User {
-  id        Int                @id @default(autoincrement())
-  email     String             @unique
-  username  String?
-  name      String?
-  posts     Post[]
-  createdAt DateTime           @default(now()) @onCreate(now())
-  updatedAt temporal.UpdatedAt
+enum TxType {
+  UDHAAR
+  JAMA
 }
 
-model Post {
-  id        Int                @id @default(autoincrement())
-  title     String
-  content   String?
-  author    User               @relation(fields: [authorId], references: [id])
-  authorId  Int
-  createdAt DateTime           @default(now()) @onCreate(now())
-  updatedAt temporal.UpdatedAt
+model Shop {
+  id           String        @id @onCreate(cuid(2))
+  shopName     String
+  location     String?
+  ownerPhone   String?
+  isDemo       Boolean       @default(false)
+  customers    Customer[]
+  transactions Transaction[]
+  createdAt    temporal.CreatedAt
+}
+
+model Customer {
+  id            String        @id @onCreate(cuid(2))
+  shopId        String
+  shop          Shop          @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  name          String
+  tag           String?
+  phone         String?
+  reminderOptIn Boolean       @default(false)
+  transactions  Transaction[]
+  createdAt     temporal.CreatedAt
+
+  @@unique([shopId, name, tag])
+  @@index([shopId, name])
+}
+
+model Transaction {
+  id              String        @id @onCreate(cuid(2))
+  shopId          String
+  shop            Shop          @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  customerId      String
+  customer        Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  type            TxType
+  amount          Decimal(precision: 12, scale: 2)
+  notes           String?
+  transactionDate DateTime      @default(now())
+  isReverted      Boolean       @default(false)
+  replacesTxId    String?
+  replacesTx      Transaction?  @relation("TxReplacement", fields: [replacesTxId], references: [id], onDelete: SetNull)
+  replacedBy      Transaction[] @relation("TxReplacement")
+  createdAt       temporal.CreatedAt
+
+  @@index([shopId, createdAt])
+  @@index([shopId, customerId, transactionDate])
+  @@index([customerId, transactionDate])
+  @@index([replacesTxId])
 }

@@ -1,5 +1,9 @@
+.next/
 node_modules/
 dist/
 .env
 /.alchemy
 /.prisma-composer
+*.tsbuildinfo
+
+
