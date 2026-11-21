@@ -66,13 +66,25 @@
 .is-hearing .eq-bar-4 { animation-delay: 420ms; }
 .is-hearing .eq-bar-5 { animation-delay: 560ms; }
 
+@keyframes waveBar {
+  0%, 100% { transform: scaleY(0.45); opacity: 0.55; }
+  50% { transform: scaleY(1); opacity: 1; }
+}
+.wave-bar {
+  transform-origin: center;
+  animation: waveBar 1100ms ease-in-out infinite;
+}
+.wave-bar-2 { animation-delay: 180ms; }
+.wave-bar-3 { animation-delay: 360ms; }
+
 @media (prefers-reduced-motion: reduce) {
   .is-hearing .orb-core,
   .is-hearing .orb-halo,
   .is-hearing .orb-ring-1,
   .is-hearing .orb-ring-2,
   .is-hearing .orb-ring-3,
-  .is-hearing .eq-bar {
+  .is-hearing .eq-bar,
+  .wave-bar {
     animation: none;
   }
 }
