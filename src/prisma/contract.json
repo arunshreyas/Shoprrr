@@ -38,6 +38,16 @@
         "models": {
           "Customer": {
             "fields": {
+              "aliases": {
+                "many": {
+                  "elementNullable": false
+                },
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
               "createdAt": {
                 "nullable": false,
                 "type": {
@@ -53,6 +63,16 @@
                 "type": {
                   "codecId": "pg/text@1",
                   "kind": "scalar"
+                }
+              },
+              "lastTxAt": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/timestamptz-date@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "precision": 3
+                  }
                 }
               },
               "name": {
@@ -126,11 +146,17 @@
             },
             "storage": {
               "fields": {
+                "aliases": {
+                  "column": "aliases"
+                },
                 "createdAt": {
                   "column": "createdAt"
                 },
                 "id": {
                   "column": "id"
+                },
+                "lastTxAt": {
+                  "column": "lastTxAt"
                 },
                 "name": {
                   "column": "name"
@@ -262,12 +288,15 @@
               "amount": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/numeric@1",
-                  "kind": "scalar",
-                  "typeParams": {
-                    "precision": 12,
-                    "scale": 2
-                  }
+                  "codecId": "pg/int4@1",
+                  "kind": "scalar"
+                }
+              },
+              "batchId": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
                 }
               },
               "createdAt": {
@@ -416,6 +445,9 @@
                 "amount": {
                   "column": "amount"
                 },
+                "batchId": {
+                  "column": "batchId"
+                },
                 "createdAt": {
                   "column": "createdAt"
                 },
@@ -475,7 +507,26 @@
           },
           "table": {
             "Customer": {
+              "checks": [
+                {
+                  "expression": "array_position(\"aliases\", NULL) IS NULL",
+                  "name": "Customer_aliases_elem_not_null_3676266c",
+                  "prefix": "Customer_aliases_elem_not_null"
+                }
+              ],
               "columns": {
+                "aliases": {
+                  "codecId": "pg/text@1",
+                  "dataType": "pg/text",
+                  "default": {
+                    "kind": "literal",
+                    "value": []
+                  },
+                  "many": {
+                    "elementNullable": false
+                  },
+                  "nullable": false
+                },
                 "createdAt": {
                   "codecId": "pg/timestamptz-date@1",
                   "dataType": "pg/timestamptz",
@@ -488,6 +539,14 @@
                   "codecId": "pg/text@1",
                   "dataType": "pg/text",
                   "nullable": false
+                },
+                "lastTxAt": {
+                  "codecId": "pg/timestamptz-date@1",
+                  "dataType": "pg/timestamptz",
+                  "nullable": true,
+                  "typeParams": {
+                    "precision": 3
+                  }
                 },
                 "name": {
                   "codecId": "pg/text@1",
@@ -553,10 +612,25 @@
                 {
                   "columns": [
                     "shopId",
+                    "lastTxAt"
+                  ],
+                  "name": "Customer_shopId_lastTxAt_idx_a0d80880",
+                  "prefix": "Customer_shopId_lastTxAt_idx",
+                  "unique": false
+                },
+                {
+                  "columns": [
+                    "shopId",
                     "name"
                   ],
                   "name": "Customer_shopId_name_idx_6ce4fc0b",
                   "prefix": "Customer_shopId_name_idx",
+                  "unique": false
+                },
+                {
+                  "expression": "\"shopId\", lower(\"name\")",
+                  "name": "customer_shop_name_lower_cb57bea6",
+                  "prefix": "customer_shop_name_lower",
                   "unique": false
                 }
               ],
@@ -622,7 +696,13 @@
                   "id"
                 ]
               },
-              "uniques": []
+              "uniques": [
+                {
+                  "columns": [
+                    "ownerPhone"
+                  ]
+                }
+              ]
             },
             "Transaction": {
               "checks": [
@@ -634,13 +714,14 @@
               ],
               "columns": {
                 "amount": {
-                  "codecId": "pg/numeric@1",
-                  "dataType": "pg/numeric",
-                  "nullable": false,
-                  "typeParams": {
-                    "precision": 12,
-                    "scale": 2
-                  }
+                  "codecId": "pg/int4@1",
+                  "dataType": "pg/int4",
+                  "nullable": false
+                },
+                "batchId": {
+                  "codecId": "pg/text@1",
+                  "dataType": "pg/text",
+                  "nullable": true
                 },
                 "createdAt": {
                   "codecId": "pg/timestamptz-date@1",
@@ -773,10 +854,27 @@
               "indexes": [
                 {
                   "columns": [
+                    "batchId"
+                  ],
+                  "name": "Transaction_batchId_idx_84d4b0b9",
+                  "prefix": "Transaction_batchId_idx",
+                  "unique": false
+                },
+                {
+                  "columns": [
                     "customerId"
                   ],
                   "name": "Transaction_customerId_idx_b2a8a46c",
                   "prefix": "Transaction_customerId_idx",
+                  "unique": false
+                },
+                {
+                  "columns": [
+                    "customerId",
+                    "isReverted"
+                  ],
+                  "name": "Transaction_customerId_isReverted_idx_a8cf2ebb",
+                  "prefix": "Transaction_customerId_isReverted_idx",
                   "unique": false
                 },
                 {
@@ -807,20 +905,19 @@
                 },
                 {
                   "columns": [
-                    "shopId",
-                    "customerId",
-                    "transactionDate"
-                  ],
-                  "name": "Transaction_shopId_customerId_transactionDate_idx_3e7af21a",
-                  "prefix": "Transaction_shopId_customerId_transactionDate_idx",
-                  "unique": false
-                },
-                {
-                  "columns": [
                     "shopId"
                   ],
                   "name": "Transaction_shopId_idx_e9207c6b",
                   "prefix": "Transaction_shopId_idx",
+                  "unique": false
+                },
+                {
+                  "columns": [
+                    "shopId",
+                    "transactionDate"
+                  ],
+                  "name": "Transaction_shopId_transactionDate_idx_9a936c14",
+                  "prefix": "Transaction_shopId_transactionDate_idx",
                   "unique": false
                 }
               ],
@@ -846,7 +943,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "92133990416e3b6a5c949998f350fa6a7d2fd3f29fd956ee3b2cb4c23e1db031"
+    "storageHash": "4b1ba7d90f1015e0de644c30fa825e0b48ec09515be281052b3c94249345ea0e"
   },
   "execution": {
     "executionHash": "60696f057d8cde59f366ec035440f14db29c706a3cf8076aef72acce9aa58536",

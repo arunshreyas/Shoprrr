@@ -23,7 +23,7 @@ import type {
 } from '@prisma/orm-postgres/contract/types';
 
 export type StorageHash =
-  StorageHashBase<'92133990416e3b6a5c949998f350fa6a7d2fd3f29fd956ee3b2cb4c23e1db031'>;
+  StorageHashBase<'4b1ba7d90f1015e0de644c30fa825e0b48ec09515be281052b3c94249345ea0e'>;
 export type ExecutionHash =
   ExecutionHashBase<'60696f057d8cde59f366ec035440f14db29c706a3cf8076aef72acce9aa58536'>;
 export type ProfileHash =
@@ -324,8 +324,10 @@ export type StorageColumnInputTypes = ColumnTypesFromStorage<
 
 export namespace Models {
   export type public_Customer = {
+    aliases: FieldOutputTypes['public']['Customer']['aliases'];
     createdAt: FieldOutputTypes['public']['Customer']['createdAt'];
     id: FieldOutputTypes['public']['Customer']['id'];
+    lastTxAt: FieldOutputTypes['public']['Customer']['lastTxAt'];
     name: FieldOutputTypes['public']['Customer']['name'];
     phone: FieldOutputTypes['public']['Customer']['phone'];
     reminderOptIn: FieldOutputTypes['public']['Customer']['reminderOptIn'];
@@ -348,6 +350,7 @@ export namespace Models {
   };
   export type public_Transaction = {
     amount: FieldOutputTypes['public']['Transaction']['amount'];
+    batchId: FieldOutputTypes['public']['Transaction']['batchId'];
     createdAt: FieldOutputTypes['public']['Transaction']['createdAt'];
     customerId: FieldOutputTypes['public']['Transaction']['customerId'];
     id: FieldOutputTypes['public']['Transaction']['id'];
@@ -393,6 +396,16 @@ type ContractBase = Omit<
           readonly table: {
             readonly Customer: {
               columns: {
+                readonly aliases: {
+                  readonly dataType: 'pg/text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                  readonly default: {
+                    readonly kind: 'literal';
+                    readonly value: DefaultLiteralValue<'pg/text@1', readonly []>;
+                  };
+                  readonly many: { readonly elementNullable: false };
+                };
                 readonly createdAt: {
                   readonly dataType: 'pg/timestamptz';
                   readonly codecId: 'pg/timestamptz-date@1';
@@ -404,6 +417,13 @@ type ContractBase = Omit<
                   readonly dataType: 'pg/text';
                   readonly codecId: 'pg/text@1';
                   readonly nullable: false;
+                  readonly many: false;
+                };
+                readonly lastTxAt: {
+                  readonly dataType: 'pg/timestamptz';
+                  readonly codecId: 'pg/timestamptz-date@1';
+                  readonly nullable: true;
+                  readonly typeParams: { readonly precision: 3 };
                   readonly many: false;
                 };
                 readonly name: {
@@ -451,9 +471,21 @@ type ContractBase = Omit<
                   readonly unique: false;
                 },
                 {
+                  readonly name: 'Customer_shopId_lastTxAt_idx_a0d80880';
+                  readonly prefix: 'Customer_shopId_lastTxAt_idx';
+                  readonly columns: readonly ['shopId', 'lastTxAt'];
+                  readonly unique: false;
+                },
+                {
                   readonly name: 'Customer_shopId_name_idx_6ce4fc0b';
                   readonly prefix: 'Customer_shopId_name_idx';
                   readonly columns: readonly ['shopId', 'name'];
+                  readonly unique: false;
+                },
+                {
+                  readonly name: 'customer_shop_name_lower_cb57bea6';
+                  readonly prefix: 'customer_shop_name_lower';
+                  readonly expression: '"shopId", lower("name")';
                   readonly unique: false;
                 },
               ];
@@ -517,17 +549,22 @@ type ContractBase = Omit<
                 };
               };
               primaryKey: { readonly columns: readonly ['id'] };
-              uniques: readonly [];
+              uniques: readonly [{ readonly columns: readonly ['ownerPhone'] }];
               indexes: readonly [];
               foreignKeys: readonly [];
             };
             readonly Transaction: {
               columns: {
                 readonly amount: {
-                  readonly dataType: 'pg/numeric';
-                  readonly codecId: 'pg/numeric@1';
+                  readonly dataType: 'pg/int4';
+                  readonly codecId: 'pg/int4@1';
                   readonly nullable: false;
-                  readonly typeParams: { readonly precision: 12; readonly scale: 2 };
+                  readonly many: false;
+                };
+                readonly batchId: {
+                  readonly dataType: 'pg/text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: true;
                   readonly many: false;
                 };
                 readonly createdAt: {
@@ -596,9 +633,21 @@ type ContractBase = Omit<
               uniques: readonly [];
               indexes: readonly [
                 {
+                  readonly name: 'Transaction_batchId_idx_84d4b0b9';
+                  readonly prefix: 'Transaction_batchId_idx';
+                  readonly columns: readonly ['batchId'];
+                  readonly unique: false;
+                },
+                {
                   readonly name: 'Transaction_customerId_idx_b2a8a46c';
                   readonly prefix: 'Transaction_customerId_idx';
                   readonly columns: readonly ['customerId'];
+                  readonly unique: false;
+                },
+                {
+                  readonly name: 'Transaction_customerId_isReverted_idx_a8cf2ebb';
+                  readonly prefix: 'Transaction_customerId_isReverted_idx';
+                  readonly columns: readonly ['customerId', 'isReverted'];
                   readonly unique: false;
                 },
                 {
@@ -620,15 +669,15 @@ type ContractBase = Omit<
                   readonly unique: false;
                 },
                 {
-                  readonly name: 'Transaction_shopId_customerId_transactionDate_idx_3e7af21a';
-                  readonly prefix: 'Transaction_shopId_customerId_transactionDate_idx';
-                  readonly columns: readonly ['shopId', 'customerId', 'transactionDate'];
-                  readonly unique: false;
-                },
-                {
                   readonly name: 'Transaction_shopId_idx_e9207c6b';
                   readonly prefix: 'Transaction_shopId_idx';
                   readonly columns: readonly ['shopId'];
+                  readonly unique: false;
+                },
+                {
+                  readonly name: 'Transaction_shopId_transactionDate_idx_9a936c14';
+                  readonly prefix: 'Transaction_shopId_transactionDate_idx';
+                  readonly columns: readonly ['shopId', 'transactionDate'];
                   readonly unique: false;
                 },
               ];
@@ -701,6 +750,11 @@ type ContractBase = Omit<
         readonly models: {
           readonly Customer: {
             readonly fields: {
+              readonly aliases: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+                readonly many: { readonly elementNullable: false };
+              };
               readonly createdAt: {
                 readonly nullable: false;
                 readonly type: {
@@ -712,6 +766,14 @@ type ContractBase = Omit<
               readonly id: {
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly lastTxAt: {
+                readonly nullable: true;
+                readonly type: {
+                  readonly kind: 'scalar';
+                  readonly codecId: 'pg/timestamptz-date@1';
+                  readonly typeParams: { readonly precision: 3 };
+                };
               };
               readonly name: {
                 readonly nullable: false;
@@ -760,8 +822,10 @@ type ContractBase = Omit<
               readonly table: 'Customer';
               readonly namespaceId: 'public';
               readonly fields: {
+                readonly aliases: { readonly column: 'aliases' };
                 readonly createdAt: { readonly column: 'createdAt' };
                 readonly id: { readonly column: 'id' };
+                readonly lastTxAt: { readonly column: 'lastTxAt' };
                 readonly name: { readonly column: 'name' };
                 readonly phone: { readonly column: 'phone' };
                 readonly reminderOptIn: { readonly column: 'reminderOptIn' };
@@ -842,11 +906,11 @@ type ContractBase = Omit<
             readonly fields: {
               readonly amount: {
                 readonly nullable: false;
-                readonly type: {
-                  readonly kind: 'scalar';
-                  readonly codecId: 'pg/numeric@1';
-                  readonly typeParams: { readonly precision: 12; readonly scale: 2 };
-                };
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/int4@1' };
+              };
+              readonly batchId: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
               };
               readonly createdAt: {
                 readonly nullable: false;
@@ -944,6 +1008,7 @@ type ContractBase = Omit<
               readonly namespaceId: 'public';
               readonly fields: {
                 readonly amount: { readonly column: 'amount' };
+                readonly batchId: { readonly column: 'batchId' };
                 readonly createdAt: { readonly column: 'createdAt' };
                 readonly customerId: { readonly column: 'customerId' };
                 readonly id: { readonly column: 'id' };

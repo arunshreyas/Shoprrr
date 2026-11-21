@@ -9,7 +9,7 @@ model Shop {
   id           String        @id @onCreate(cuid(2))
   shopName     String
   location     String?
-  ownerPhone   String?
+  ownerPhone   String?       @unique
   isDemo       Boolean       @default(false)
   customers    Customer[]
   transactions Transaction[]
@@ -24,13 +24,17 @@ model Customer {
   shop          Shop          @relation(fields: [shopId], references: [id], onDelete: Cascade)
   name          String
   tag           String?
+  aliases       String[]      @default([])
   phone         String?
   reminderOptIn Boolean       @default(false)
+  lastTxAt      DateTime?
   transactions  Transaction[]
   createdAt     temporal.CreatedAt
 
   @@unique([shopId, name, tag])
   @@index([shopId, name])
+  @@index([shopId, lastTxAt])
+  @@index(expression: sql`"shopId", lower("name")`, name: "customer_shop_name_lower")
   @@rls
 }
 
@@ -41,8 +45,9 @@ model Transaction {
   customerId      String
   customer        Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
   type            TxType
-  amount          Decimal(precision: 12, scale: 2)
+  amount          Int
   notes           String?
+  batchId         String?
   transactionDate DateTime      @default(now())
   isReverted      Boolean       @default(false)
   replacesTxId    String?
@@ -51,8 +56,10 @@ model Transaction {
   createdAt       temporal.CreatedAt
 
   @@index([shopId, createdAt])
-  @@index([shopId, customerId, transactionDate])
+  @@index([shopId, transactionDate])
+  @@index([customerId, isReverted])
   @@index([customerId, transactionDate])
+  @@index([batchId])
   @@index([replacesTxId])
   @@rls
 }
