@@ -13,6 +13,7 @@ export interface LedgerActionItem {
 export interface CustomerWithBalance {
   id: string;
   name: string;
+  displayName: string;
   tag: string | null;
   aliases: readonly string[];
   phone: string | null;
@@ -22,6 +23,7 @@ export interface CustomerWithBalance {
   udhaarTotal: number;
   jamaTotal: number;
   txCount: number;
+  subtitle: string;
 }
 
 export interface ShopLedgerState {
@@ -141,9 +143,36 @@ export async function getShopLedgerState(shopId: string): Promise<ShopLedgerStat
     const netBalance = stat.udhaar - stat.jama;
     totalPendingBalance += netBalance;
 
+    const latestTx = transactions.find((t) => t.customerId === c.id);
+    let subtitle = "New account • 0 entries";
+
+    if (netBalance === 0 && stat.count > 0) {
+      subtitle = "Settled • ₹0 pending";
+    } else if (latestTx) {
+      const txDate = new Date(latestTx.transactionDate);
+      const isTodayTx = txDate >= todayStart && txDate <= todayEnd;
+      const yesterdayStart = new Date(todayStart);
+      yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+      const isYesterdayTx = txDate >= yesterdayStart && txDate < todayStart;
+
+      const typeLabel = latestTx.type === "UDHAAR" ? "udhaar" : "jama";
+      if (isTodayTx) {
+        subtitle = `Last ${typeLabel}: Today • ${stat.count} entries`;
+      } else if (isYesterdayTx) {
+        subtitle = `Last ${typeLabel}: Yesterday (Kal) • ${stat.count} entries`;
+      } else {
+        const diffDays = Math.max(
+          2,
+          Math.floor((todayStart.getTime() - txDate.getTime()) / (1000 * 60 * 60 * 24)),
+        );
+        subtitle = `Last ${typeLabel}: ${diffDays} days ago • ${stat.count} entries`;
+      }
+    }
+
     return {
       id: c.id,
       name: c.name,
+      displayName: c.tag ? `${c.name} (${c.tag})` : c.name,
       tag: c.tag,
       aliases: c.aliases,
       phone: c.phone,
@@ -153,6 +182,7 @@ export async function getShopLedgerState(shopId: string): Promise<ShopLedgerStat
       udhaarTotal: stat.udhaar,
       jamaTotal: stat.jama,
       txCount: stat.count,
+      subtitle,
     };
   });
 
