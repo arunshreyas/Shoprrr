@@ -8,6 +8,7 @@ export type ParsedIntentType =
   | "CLARIFY_CUSTOMER";
 
 export interface ParsedCommand {
+  hasWakeWord?: boolean;
   intent: ParsedIntentType;
   rawCustomerName?: string;
   spokenTag?: string;
@@ -102,6 +103,48 @@ const HINDI_NUMBER_WORDS: Record<string, number> = {
 };
 
 /**
+ * Detects Alexa-style wake words ("Shoppr", "Shoprr", "Shopper", "Hey Shoppr", "Ok Shoppr").
+ * Returns whether wake word was present and strips it cleanly from the command payload.
+ */
+export function detectWakeWord(transcript: string): {
+  hasWakeWord: boolean;
+  cleanedTranscript: string;
+} {
+  const trimmed = transcript.trim();
+
+  // Pattern matching wake words at beginning (e.g. "Shoppr, Naresh ko 200 debt hai", "Shoprr 340")
+  const leadingWakeRegex =
+    /^(?:hey\s+|ok\s+|suno\s+|arre\s+|hello\s+|bhai\s+)?(?:shoppr|shoprr|shopper|shoper|shoppar|shopar|alexa)\b[\s,:;—\-]*/i;
+
+  if (leadingWakeRegex.test(trimmed)) {
+    return {
+      hasWakeWord: true,
+      cleanedTranscript: trimmed.replace(leadingWakeRegex, "").trim(),
+    };
+  }
+
+  // Also check if wake word appears mid-sentence e.g. "arre bhai shoppr, 200 likho"
+  const anyWakeRegex =
+    /\b(?:hey\s+|ok\s+|suno\s+|arre\s+)?(?:shoppr|shoprr|shopper|shoper|shoppar|shopar|alexa)\b[\s,:;—\-]*/i;
+
+  if (anyWakeRegex.test(trimmed)) {
+    const parts = trimmed.split(anyWakeRegex);
+    const remainder = parts.slice(1).join(" ").trim();
+    if (remainder) {
+      return {
+        hasWakeWord: true,
+        cleanedTranscript: remainder,
+      };
+    }
+  }
+
+  return {
+    hasWakeWord: false,
+    cleanedTranscript: trimmed,
+  };
+}
+
+/**
  * Parses spoken Hinglish or numeric digits into a whole rupee number.
  * Handles "teen sau chaalis" -> 340, "paanch sau" -> 500, "340" -> 340, "dhai sau" -> 250.
  */
@@ -182,6 +225,7 @@ export function parseRelativeDate(text: string): Date {
 
 /**
  * Determines transaction type: UDHAAR (credit given) or JAMA (payment received).
+ * Handles Indian Kirana terminology including "debt", "debt hai", "udhaar", "jama", "credit received".
  */
 export function parseTxType(text: string): TxType {
   const lower = text.toLowerCase();
@@ -205,6 +249,8 @@ export function parseTxType(text: string): TxType {
     "chukta",
     "paid",
     "received",
+    "settle",
+    "settled",
   ];
 
   for (const kw of jamaKeywords) {
@@ -213,20 +259,24 @@ export function parseTxType(text: string): TxType {
     }
   }
 
-  // Default for Kirana khata ledger entry is UDHAAR
+  // Default for Kirana khata ledger entry is UDHAAR (including "debt", "udhaar", "due", "baaki")
   return "UDHAAR";
 }
 
 /**
  * Clean and extract customer name from spoken phrase.
+ * Ensures wake words (Shoppr, Shoprr, Alexa) are never treated as customer names.
  */
 function extractCustomerName(phrase: string): string | null {
   let cleaned = phrase.trim();
 
-  // Remove common prefix greetings/fillers
-  cleaned = cleaned.replace(/^(?:shoppr|shoppar|arre|suno|bhai|hello)\s+/i, "");
+  // Remove common prefix wake words, greetings and fillers
+  cleaned = cleaned.replace(
+    /^(?:hey\s+|ok\s+|suno\s+|arre\s+|hello\s+|bhai\s+)?(?:shoppr|shoprr|shopper|shoper|shoppar|shopar|alexa)\b[\s,:;—\-]*/i,
+    "",
+  ).trim();
 
-  // Match: "[Name] ka/ko/ki/ke"
+  // Match: "[Name] ka/ko/ki/ke/ne"
   const relMatch = cleaned.match(/^([a-zA-Z\u0900-\u097F\s]+?)\s+(?:ka|ko|ke|ki|ne)\b/i);
   if (relMatch && relMatch[1]) {
     const name = relMatch[1].trim();
@@ -241,12 +291,30 @@ function extractCustomerName(phrase: string): string | null {
     return pronounMatch[1].toLowerCase();
   }
 
-  // Match before number or action
+  // Match before number or action keywords
   const words = cleaned.split(/\s+/);
   const nameParts: string[] = [];
   for (const w of words) {
     const isNum = parseHinglishNumber(w) !== null || /^\d+$/.test(w);
-    const isKeyword = ["udhaar", "udhar", "jama", "baaki", "likh", "likho", "diya", "kal", "aaj"].includes(w.toLowerCase());
+    const isKeyword = [
+      "udhaar",
+      "udhar",
+      "jama",
+      "baaki",
+      "baki",
+      "debt",
+      "due",
+      "credit",
+      "likh",
+      "likho",
+      "likhna",
+      "diya",
+      "kal",
+      "aaj",
+      "hai",
+      "parso",
+    ].includes(w.toLowerCase());
+
     if (isNum || isKeyword) break;
     nameParts.push(w);
   }
@@ -260,11 +328,15 @@ function extractCustomerName(phrase: string): string | null {
 
 /**
  * Parses a spoken Hinglish transcript into a structured action command.
+ * Supports Alexa-style wake word ("Shoppr, ...", "Shoprr, ..."),
+ * natural kirana phrases ("shoppr naresh ko 200 debt hai"),
+ * compound utterances, instant undo, customer balance queries, and daily summaries.
  */
 export function parseHinglishCommand(transcript: string): ParsedCommand {
-  const clean = transcript.trim().toLowerCase();
+  const { hasWakeWord, cleanedTranscript } = detectWakeWord(transcript);
+  const clean = (cleanedTranscript || transcript).trim().toLowerCase();
 
-  // 1. Spoken Instant Correction / Undo ("nahi, 430", "nahi 430", "undo", "wapas lo", "galat ho gaya")
+  // 1. Spoken Instant Correction / Undo ("Shoppr, nahi, 430", "nahi 430", "undo", "wapas lo", "galat ho gaya")
   const isCorrection =
     /^(?:nahi|nahin|no|galat|undo|wapas|cancel|hatao)\b/i.test(clean) ||
     /\b(?:nahi|nahin|galat)\s*,\s*\d+/i.test(clean);
@@ -272,30 +344,33 @@ export function parseHinglishCommand(transcript: string): ParsedCommand {
   if (isCorrection) {
     const newAmount = parseHinglishNumber(clean);
     return {
+      hasWakeWord,
       intent: "CORRECT_LAST",
       newAmount: newAmount ?? undefined,
     };
   }
 
-  // 2. Query Today ("aaj kitna udhaar gaya?", "aaj ka hisab", "aaj total jama kitna hua?")
+  // 2. Query Today ("Shoppr, aaj kitna udhaar gaya?", "aaj ka hisab", "aaj total jama kitna hua?")
   const isTodayQuery =
     /\b(?:aaj|today)\b/i.test(clean) &&
     /\b(?:kitna|hisab|total|summary|batao|kya hua|status)\b/i.test(clean);
 
   if (isTodayQuery) {
     return {
+      hasWakeWord,
       intent: "QUERY_TODAY",
     };
   }
 
-  // 3. Query Customer ("Naresh bhai ka kitna baaki hai?", "Ramesh ka hisab batao", "unka kitna hai?")
+  // 3. Query Customer ("Shoppr, Naresh bhai ka kitna baaki hai?", "Ramesh ka hisab batao", "unka kitna hai?")
   const isCustomerQuery =
     /\b(?:kitna baaki|kitna hai|hisab batao|kya hisab|balance|total baaki)\b/i.test(clean) ||
-    (/\b(?:hisab|baaki)\b/i.test(clean) && !/\b(?:likh|likho|likhna|kar do|darj)\b/i.test(clean));
+    (/\b(?:hisab|baaki)\b/i.test(clean) && !/\b(?:likh|likho|likhna|kar do|darj|debt|udhaar)\b/i.test(clean));
 
   if (isCustomerQuery) {
     const name = extractCustomerName(clean) || "unka";
     return {
+      hasWakeWord,
       intent: "QUERY_CUSTOMER",
       rawCustomerName: name,
     };
@@ -304,14 +379,15 @@ export function parseHinglishCommand(transcript: string): ParsedCommand {
   // 4. Clarification answer (e.g., merchant says "Sharma ji" or "Electrician wala")
   if (/^(?:sharma ji|electrician|chowk|market)(?:\s+wala)?$/i.test(clean)) {
     return {
+      hasWakeWord,
       intent: "CLARIFY_CUSTOMER",
       spokenTag: clean.replace(/\s+wala$/i, "").trim(),
     };
   }
 
-  // 5. Transaction Record (single or compound: "Ramesh ka 340 udhaar, kal 200 diya tha")
+  // 5. Transaction Record (single or compound: "Shoppr, naresh ko 200 debt hai", "Ramesh ka 340 udhaar, kal 200 diya tha")
   // Split on commas, "aur", or "and" for compound statements
-  const clauses = transcript
+  const clauses = (cleanedTranscript || transcript)
     .split(/[,]|(?:\s+aur\s+)|\band\b/i)
     .map((s) => s.trim())
     .filter(Boolean);
@@ -333,7 +409,9 @@ export function parseHinglishCommand(transcript: string): ParsedCommand {
 
     // Extract notes if items were mentioned (e.g., "2kg atta, tel")
     let notes: string | undefined = undefined;
-    const itemMatch = clause.match(/(?:atta|tel|chawal|cheeni|shakkar|doodh|biscuit|soap|chai|ration|samaan)/i);
+    const itemMatch = clause.match(
+      /(?:atta|tel|chawal|cheeni|shakkar|doodh|biscuit|soap|chai|ration|samaan|rice|sugar|milk|oil)/i,
+    );
     if (itemMatch) {
       notes = clause;
     }
@@ -348,22 +426,25 @@ export function parseHinglishCommand(transcript: string): ParsedCommand {
 
   if (actions.length > 0) {
     return {
+      hasWakeWord,
       intent: "RECORD",
       rawCustomerName: rawCustomerName || "unka",
       actions,
     };
   }
 
-  // Fallback if not recognized as record but has name
+  // Fallback if not recognized as record but has customer name
   const fallbackName = extractCustomerName(clean);
   if (fallbackName) {
     return {
+      hasWakeWord,
       intent: "QUERY_CUSTOMER",
       rawCustomerName: fallbackName,
     };
   }
 
   return {
+    hasWakeWord,
     intent: "QUERY_TODAY",
   };
 }

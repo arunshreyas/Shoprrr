@@ -398,39 +398,46 @@ export default function ShopprVoicePage() {
           </p>
         </div>
 
-        {/* Quick Testing Phrase Chips (Hinglish PS2 test cases) */}
+        {/* Quick Testing Phrase Chips (Alexa-Style Wake Trigger test cases) */}
         <div className="w-full flex flex-col gap-gutter-xs">
           <span className="font-label text-label-xs text-primary-muted uppercase tracking-wider text-center">
-            Tap a quick sample command:
+            Alexa-Style Wake Word Triggers (Tap to Test):
           </span>
           <div className="flex flex-wrap justify-center gap-gutter-xs">
             <button
               type="button"
-              onClick={() => sendCommand("Ramesh ka 340 udhaar, kal 200 diya tha")}
-              className="text-label-xs font-medium px-gutter-sm py-1 rounded-full bg-surface-card border border-outline/10 text-on-surface hover:bg-surface-tint active:scale-95"
+              onClick={() => sendCommand("Shoppr, Naresh ko 200 debt hai")}
+              className="text-label-xs font-semibold px-gutter-sm py-1 rounded-full bg-accent-container border border-accent/25 text-on-accent-container hover:bg-accent/20 active:scale-95 shadow-sm"
             >
-              &ldquo;Ramesh ka 340 udhaar, kal 200 diya tha&rdquo;
+              &ldquo;Shoppr, Naresh ko 200 debt hai&rdquo;
             </button>
             <button
               type="button"
-              onClick={() => sendCommand("nahi, 430")}
-              className="text-label-xs font-medium px-gutter-sm py-1 rounded-full bg-accent-container border border-accent/20 text-on-accent-container hover:bg-accent/20 active:scale-95"
+              onClick={() => sendCommand("Shoprr, Naresh bhai ka 340 udhaar likh do")}
+              className="text-label-xs font-medium px-gutter-sm py-1 rounded-full bg-surface-card border border-outline/10 text-on-surface hover:bg-surface-tint active:scale-95"
             >
-              &ldquo;nahi, 430&rdquo; (Undo/Correct)
+              &ldquo;Shoprr, Naresh bhai ka 340 udhaar&rdquo;
             </button>
             <button
               type="button"
-              onClick={() => sendCommand("Naresh bhai ka kitna baaki hai?")}
+              onClick={() => sendCommand("Shoppr, Ramesh ka 340 udhaar, kal 200 diya tha")}
               className="text-label-xs font-medium px-gutter-sm py-1 rounded-full bg-surface-card border border-outline/10 text-on-surface hover:bg-surface-tint active:scale-95"
             >
-              &ldquo;Naresh bhai ka kitna baaki hai?&rdquo;
+              &ldquo;Shoppr, Ramesh 340 udhaar, kal 200 diya tha&rdquo;
             </button>
             <button
               type="button"
-              onClick={() => sendCommand("Aaj kitna udhaar gaya?")}
+              onClick={() => sendCommand("Shoppr, nahi, 430")}
               className="text-label-xs font-medium px-gutter-sm py-1 rounded-full bg-surface-card border border-outline/10 text-on-surface hover:bg-surface-tint active:scale-95"
             >
-              &ldquo;Aaj kitna udhaar gaya?&rdquo;
+              &ldquo;Shoppr, nahi, 430&rdquo; (Undo/Correct)
+            </button>
+            <button
+              type="button"
+              onClick={() => sendCommand("Shoppr, Naresh bhai ka kitna baaki hai?")}
+              className="text-label-xs font-medium px-gutter-sm py-1 rounded-full bg-surface-card border border-outline/10 text-on-surface hover:bg-surface-tint active:scale-95"
+            >
+              &ldquo;Shoppr, Naresh bhai ka kitna baaki hai?&rdquo;
             </button>
           </div>
         </div>
