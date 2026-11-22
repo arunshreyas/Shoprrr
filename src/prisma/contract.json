@@ -218,6 +218,13 @@
                   "kind": "scalar"
                 }
               },
+              "pinHash": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
               "shopName": {
                 "nullable": false,
                 "type": {
@@ -274,6 +281,9 @@
                 },
                 "ownerPhone": {
                   "column": "ownerPhone"
+                },
+                "pinHash": {
+                  "column": "pinHash"
                 },
                 "shopName": {
                   "column": "shopName"
@@ -683,6 +693,11 @@
                   "dataType": "pg/text",
                   "nullable": true
                 },
+                "pinHash": {
+                  "codecId": "pg/text@1",
+                  "dataType": "pg/text",
+                  "nullable": true
+                },
                 "shopName": {
                   "codecId": "pg/text@1",
                   "dataType": "pg/text",
@@ -943,7 +958,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "4b1ba7d90f1015e0de644c30fa825e0b48ec09515be281052b3c94249345ea0e"
+    "storageHash": "9659f788109c39c44a70e90d69b12191fe68a6d34cef345429f037ce957aa036"
   },
   "execution": {
     "executionHash": "60696f057d8cde59f366ec035440f14db29c706a3cf8076aef72acce9aa58536",

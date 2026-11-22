@@ -23,7 +23,7 @@ import type {
 } from '@prisma/orm-postgres/contract/types';
 
 export type StorageHash =
-  StorageHashBase<'4b1ba7d90f1015e0de644c30fa825e0b48ec09515be281052b3c94249345ea0e'>;
+  StorageHashBase<'9659f788109c39c44a70e90d69b12191fe68a6d34cef345429f037ce957aa036'>;
 export type ExecutionHash =
   ExecutionHashBase<'60696f057d8cde59f366ec035440f14db29c706a3cf8076aef72acce9aa58536'>;
 export type ProfileHash =
@@ -343,6 +343,7 @@ export namespace Models {
     isDemo: FieldOutputTypes['public']['Shop']['isDemo'];
     location: FieldOutputTypes['public']['Shop']['location'];
     ownerPhone: FieldOutputTypes['public']['Shop']['ownerPhone'];
+    pinHash: FieldOutputTypes['public']['Shop']['pinHash'];
     shopName: FieldOutputTypes['public']['Shop']['shopName'];
     customers: public_Customer[];
     transactions: public_Transaction[];
@@ -536,6 +537,12 @@ type ContractBase = Omit<
                   readonly many: false;
                 };
                 readonly ownerPhone: {
+                  readonly dataType: 'pg/text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: true;
+                  readonly many: false;
+                };
+                readonly pinHash: {
                   readonly dataType: 'pg/text';
                   readonly codecId: 'pg/text@1';
                   readonly nullable: true;
@@ -860,6 +867,10 @@ type ContractBase = Omit<
                 readonly nullable: true;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
               };
+              readonly pinHash: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
               readonly shopName: {
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
@@ -898,6 +909,7 @@ type ContractBase = Omit<
                 readonly isDemo: { readonly column: 'isDemo' };
                 readonly location: { readonly column: 'location' };
                 readonly ownerPhone: { readonly column: 'ownerPhone' };
+                readonly pinHash: { readonly column: 'pinHash' };
                 readonly shopName: { readonly column: 'shopName' };
               };
             };

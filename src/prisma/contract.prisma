@@ -10,6 +10,7 @@ model Shop {
   shopName     String
   location     String?
   ownerPhone   String?       @unique
+  pinHash      String?
   isDemo       Boolean       @default(false)
   customers    Customer[]
   transactions Transaction[]

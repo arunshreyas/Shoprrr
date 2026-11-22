@@ -3,25 +3,196 @@ import { db } from "../prisma/db";
 
 export type TxType = "UDHAAR" | "JAMA";
 
-export interface CompoundEntryItem {
+export interface LedgerActionItem {
   type: TxType;
   amount: number;
   transactionDate?: Date;
   notes?: string;
 }
 
+export interface CustomerWithBalance {
+  id: string;
+  name: string;
+  tag: string | null;
+  aliases: readonly string[];
+  phone: string | null;
+  reminderOptIn: boolean;
+  lastTxAt: Date | null;
+  balance: number; // positive = customer owes money (UDHAAR > JAMA), negative = advance
+  udhaarTotal: number;
+  jamaTotal: number;
+  txCount: number;
+}
+
+export interface ShopLedgerState {
+  shop: {
+    id: string;
+    shopName: string;
+    location: string | null;
+    ownerPhone: string | null;
+    isDemo: boolean;
+  } | null;
+  customers: CustomerWithBalance[];
+  transactions: Array<{
+    id: string;
+    shopId: string;
+    customerId: string;
+    customerName: string;
+    customerTag: string | null;
+    type: TxType;
+    amount: number;
+    notes: string | null;
+    batchId: string | null;
+    transactionDate: Date;
+    isReverted: boolean;
+    replacesTxId: string | null;
+    createdAt: string | Date;
+  }>;
+  today: {
+    udhaar: number;
+    jama: number;
+    count: number;
+  };
+  totalPendingBalance: number;
+}
+
 /**
- * 1. Customer Name Resolution & Disambiguation
- * Handles pronoun resolution ("unka", "uska") via lastTxAt,
- * case-insensitive name lookup, and phonetic STT aliases matching.
+ * 1. getShopLedgerState(shopId)
+ * Returns active transactions (isReverted: false, ordered newest first),
+ * today's UDHAAR and JAMA totals, and every customer's net pending balance (SUM(UDHAAR) - SUM(JAMA)).
+ */
+export async function getShopLedgerState(shopId: string): Promise<ShopLedgerState> {
+  const shop = await db.orm.public.Shop.first({ id: shopId });
+  const customers = await db.orm.public.Customer.where({ shopId }).all();
+  const transactions = await db.orm.public.Transaction
+    .where({ shopId, isReverted: false })
+    .orderBy((t) => t.createdAt.desc())
+    .all();
+
+  // Create customer lookup map
+  const customerMap = new Map<string, (typeof customers)[0]>();
+  for (const c of customers) {
+    customerMap.set(c.id, c);
+  }
+
+  // Calculate today's boundaries (local / server calendar day)
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayEnd = new Date();
+  todayEnd.setHours(23, 59, 59, 999);
+
+  let todayUdhaar = 0;
+  let todayJama = 0;
+  let todayCount = 0;
+
+  // Track customer totals
+  const custStats = new Map<
+    string,
+    { udhaar: number; jama: number; count: number }
+  >();
+
+  for (const c of customers) {
+    custStats.set(c.id, { udhaar: 0, jama: 0, count: 0 });
+  }
+
+  const enrichedTxs = transactions.map((t) => {
+    const cust = customerMap.get(t.customerId);
+    const isToday =
+      t.transactionDate >= todayStart && t.transactionDate <= todayEnd;
+
+    if (isToday) {
+      todayCount += 1;
+      if (t.type === "UDHAAR") {
+        todayUdhaar += t.amount;
+      } else {
+        todayJama += t.amount;
+      }
+    }
+
+    const stat = custStats.get(t.customerId) || { udhaar: 0, jama: 0, count: 0 };
+    if (t.type === "UDHAAR") {
+      stat.udhaar += t.amount;
+    } else {
+      stat.jama += t.amount;
+    }
+    stat.count += 1;
+    custStats.set(t.customerId, stat);
+
+    return {
+      id: t.id,
+      shopId: t.shopId,
+      customerId: t.customerId,
+      customerName: cust ? cust.name : "Unknown",
+      customerTag: cust?.tag ?? null,
+      type: t.type as TxType,
+      amount: t.amount,
+      notes: t.notes,
+      batchId: t.batchId,
+      transactionDate: t.transactionDate,
+      isReverted: t.isReverted,
+      replacesTxId: t.replacesTxId,
+      createdAt: t.createdAt,
+    };
+  });
+
+  let totalPendingBalance = 0;
+  const customerBalances: CustomerWithBalance[] = customers.map((c) => {
+    const stat = custStats.get(c.id) || { udhaar: 0, jama: 0, count: 0 };
+    const netBalance = stat.udhaar - stat.jama;
+    totalPendingBalance += netBalance;
+
+    return {
+      id: c.id,
+      name: c.name,
+      tag: c.tag,
+      aliases: c.aliases,
+      phone: c.phone,
+      reminderOptIn: c.reminderOptIn,
+      lastTxAt: c.lastTxAt,
+      balance: netBalance,
+      udhaarTotal: stat.udhaar,
+      jamaTotal: stat.jama,
+      txCount: stat.count,
+    };
+  });
+
+  return {
+    shop: shop
+      ? {
+          id: shop.id,
+          shopName: shop.shopName,
+          location: shop.location,
+          ownerPhone: shop.ownerPhone,
+          isDemo: shop.isDemo,
+        }
+      : null,
+    customers: customerBalances,
+    transactions: enrichedTxs,
+    today: {
+      udhaar: todayUdhaar,
+      jama: todayJama,
+      count: todayCount,
+    },
+    totalPendingBalance,
+  };
+}
+
+/**
+ * 2. resolveCustomer(shopId, rawName)
+ * Case-insensitive match on Customer.name (also checking aliases).
+ * Resolves pronouns ("unka", "uska", etc.) using lastTxAt.
+ * If 0 matches, auto-creates the customer and returns it.
+ * If 2+ match, returns { needsDisambiguation: true, candidates }.
  */
 export async function resolveCustomer(
   shopId: string,
-  spokenNameOrPronoun: string,
+  rawName: string,
   spokenTag?: string,
 ) {
-  const normalized = spokenNameOrPronoun.trim().toLowerCase();
-  const isPronoun = ["unka", "uska", "unhone", "unko", "vo"].includes(normalized);
+  const normalized = rawName.trim().toLowerCase();
+  const isPronoun = ["unka", "uska", "unhone", "unko", "vo", "inka", "iska"].includes(
+    normalized,
+  );
 
   // A) Pronoun resolution: Return the active customer from the most recent transaction
   if (isPronoun) {
@@ -30,14 +201,16 @@ export async function resolveCustomer(
       .orderBy((c) => c.lastTxAt.desc({ nulls: "last" }))
       .first();
 
-    return {
-      status: activeCustomer ? ("RESOLVED" as const) : ("NOT_FOUND" as const),
-      customer: activeCustomer,
-      candidates: activeCustomer ? [activeCustomer] : [],
-    };
+    if (activeCustomer) {
+      return {
+        needsDisambiguation: false,
+        customer: activeCustomer,
+        candidates: [activeCustomer],
+      };
+    }
   }
 
-  // B) Query shop customers (uses customer_shop_name_lower index)
+  // B) Query shop customers
   const customers = await db.orm.public.Customer
     .where((c) => c.shopId.eq(shopId))
     .all();
@@ -49,15 +222,27 @@ export async function resolveCustomer(
     return nameMatch || aliasMatch;
   });
 
+  // If 0 matches: Auto-create the customer and return it
   if (matches.length === 0) {
+    const capitalizedName =
+      rawName.trim().charAt(0).toUpperCase() + rawName.trim().slice(1);
+    const created = await db.orm.public.Customer.create({
+      shopId,
+      name: capitalizedName,
+      tag: spokenTag?.trim() || null,
+      aliases: [normalized],
+      reminderOptIn: false,
+      lastTxAt: new Date(),
+    });
+
     return {
-      status: "NOT_FOUND" as const,
-      customer: null,
-      candidates: [],
+      needsDisambiguation: false,
+      customer: created,
+      candidates: [created],
     };
   }
 
-  // If duplicate customers exist, disambiguate by tag (e.g. "Sharma ji" vs "Electrician")
+  // If duplicate customers exist, check if spokenTag resolves it
   if (matches.length > 1) {
     if (spokenTag) {
       const tagNormalized = spokenTag.trim().toLowerCase();
@@ -66,36 +251,37 @@ export async function resolveCustomer(
       );
       if (disambiguated) {
         return {
-          status: "RESOLVED" as const,
+          needsDisambiguation: false,
           customer: disambiguated,
           candidates: [disambiguated],
         };
       }
     }
 
+    // Still ambiguous: return needsDisambiguation: true
     return {
-      status: "DISAMBIGUATION_REQUIRED" as const,
+      needsDisambiguation: true,
       customer: null,
-      candidates: matches, // Present candidates to voice synthesizer to ask merchant
+      candidates: matches,
     };
   }
 
   return {
-    status: "RESOLVED" as const,
+    needsDisambiguation: false,
     customer: matches[0]!,
     candidates: matches,
   };
 }
 
 /**
- * 2. Compound Utterance Commit
- * Atomically commits multi-entry utterances (e.g., "Ramesh ka 340 udhaar, kal 200 diya tha")
- * linked by a shared batchId, and updates customer's lastTxAt.
+ * 3. commitEntries(shopId, customerId, actions[])
+ * Inserts single or compound entries (UDHAAR | JAMA) under a shared batchId,
+ * respecting backdated transactionDate values and updating Customer.lastTxAt.
  */
-export async function commitCompoundUtterance(
+export async function commitEntries(
   shopId: string,
   customerId: string,
-  entries: CompoundEntryItem[],
+  actions: LedgerActionItem[],
 ) {
   const batchId = `batch_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
   const now = new Date();
@@ -103,15 +289,15 @@ export async function commitCompoundUtterance(
   return await db.transaction(async (tx) => {
     const createdTransactions = [];
 
-    for (const entry of entries) {
+    for (const action of actions) {
       const created = await tx.orm.public.Transaction.create({
         shopId,
         customerId,
-        type: entry.type,
-        amount: Math.round(entry.amount),
-        notes: entry.notes ?? null,
+        type: action.type,
+        amount: Math.round(action.amount),
+        notes: action.notes ?? null,
         batchId,
-        transactionDate: entry.transactionDate ?? now,
+        transactionDate: action.transactionDate ?? now,
         isReverted: false,
       });
       createdTransactions.push(created);
@@ -130,16 +316,16 @@ export async function commitCompoundUtterance(
 }
 
 /**
- * 3. Spoken Instant Undo / Correction ("nahi, 430")
- * Finds the exact most recently spoken entry using createdAt (even if transactionDate was backdated),
- * marks it isReverted = true, and records the new replacement.
+ * 4. revertAndReplaceLastEntry(shopId, newAmount)
+ * Finds the most recently created (createdAt desc) non-reverted transaction for shopId,
+ * sets isReverted: true, and inserts a replacement transaction with the same customerId,
+ * type, transactionDate, and replacesTxId.
  */
-export async function undoOrCorrectLastSpoken(
+export async function revertAndReplaceLastEntry(
   shopId: string,
   newAmount?: number,
   customerId?: string,
 ) {
-  // Find the exact most recently created active transaction in this shop
   let query = db.orm.public.Transaction.where({ shopId, isReverted: false });
   if (customerId) {
     query = query.where({ customerId });
@@ -148,7 +334,11 @@ export async function undoOrCorrectLastSpoken(
   const lastTx = await query.orderBy((t) => t.createdAt.desc()).first();
 
   if (!lastTx) {
-    return { status: "NO_ACTIVE_TRANSACTION_TO_UNDO" as const };
+    return {
+      status: "NO_ACTIVE_TRANSACTION_TO_UNDO" as const,
+      revertedTx: null,
+      replacementTx: null,
+    };
   }
 
   return await db.transaction(async (tx) => {
@@ -188,8 +378,7 @@ export async function undoOrCorrectLastSpoken(
 }
 
 /**
- * 4. Fast Customer Balance Calculation: SUM(UDHAAR) - SUM(JAMA)
- * Fast execution using index @@index([customerId, isReverted]).
+ * Fast Customer Balance Calculation: SUM(UDHAAR) - SUM(JAMA)
  */
 export async function getCustomerBalance(customerId: string) {
   const activeTxs = await db.orm.public.Transaction
@@ -216,8 +405,7 @@ export async function getCustomerBalance(customerId: string) {
 }
 
 /**
- * 5. Daily Ledger Summary ("Aaj kitna udhaar gaya?")
- * Fast execution using index @@index([shopId, transactionDate]).
+ * Daily Ledger Summary ("Aaj kitna udhaar gaya?")
  */
 export async function getDailySummary(shopId: string, targetDate = new Date()) {
   const startOfDay = new Date(targetDate);

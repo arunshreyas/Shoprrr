@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 interface CustomerCardData {
   id: string;
   name: string;
   displayName: string;
-  tag?: string;
+  tag?: string | null;
   subtitle: string;
   balance: number;
   optedIn: boolean;
@@ -17,88 +17,12 @@ interface CustomerCardData {
 interface RecentEntryData {
   id: string;
   customerName: string;
+  customerTag?: string | null;
   type: "UDHAAR" | "JAMA";
   amount: number;
   time: string;
-  notes?: string;
+  notes?: string | null;
 }
-
-const INITIAL_CUSTOMERS: CustomerCardData[] = [
-  {
-    id: "cust_1",
-    name: "ramesh sharma ji",
-    displayName: "Ramesh (Sharma ji)",
-    tag: "Sharma ji",
-    subtitle: "Last udhaar: Today • 4 entries",
-    balance: 2480,
-    optedIn: true,
-    status: "baaki",
-  },
-  {
-    id: "cust_2",
-    name: "naresh bhai",
-    displayName: "Naresh Bhai",
-    tag: "Chowk",
-    subtitle: "Last udhaar: Today • 2 entries",
-    balance: 1840,
-    optedIn: false,
-    status: "baaki",
-  },
-  {
-    id: "cust_3",
-    name: "ramesh electrician",
-    displayName: "Ramesh (Electrician)",
-    tag: "Electrician",
-    subtitle: "Last jama: Yesterday • 3 entries",
-    balance: 650,
-    optedIn: true,
-    status: "baaki",
-  },
-  {
-    id: "cust_4",
-    name: "suresh kirana",
-    displayName: "Suresh Kirana",
-    subtitle: "Settled 2 days ago",
-    balance: 0,
-    optedIn: true,
-    status: "settled",
-  },
-];
-
-const INITIAL_RECENT_ENTRIES: RecentEntryData[] = [
-  {
-    id: "tx_1",
-    customerName: "Ramesh (Sharma ji)",
-    type: "UDHAAR",
-    amount: 340,
-    time: "2 mins ago",
-    notes: "2kg atta, tel",
-  },
-  {
-    id: "tx_2",
-    customerName: "Naresh Bhai",
-    type: "UDHAAR",
-    amount: 500,
-    time: "15 mins ago",
-    notes: "Dairy & spices",
-  },
-  {
-    id: "tx_3",
-    customerName: "Ramesh (Electrician)",
-    type: "JAMA",
-    amount: 200,
-    time: "Yesterday (Kal)",
-    notes: "Cash payment",
-  },
-  {
-    id: "tx_4",
-    customerName: "Suresh Kirana",
-    type: "JAMA",
-    amount: 650,
-    time: "2 days ago (Parso)",
-    notes: "UPI full settlement",
-  },
-];
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -106,20 +30,127 @@ export default function DashboardPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isHandsFree, setIsHandsFree] = useState(true);
   const [remindersSent, setRemindersSent] = useState<Record<string, boolean>>({});
+  const [reminderModalMessage, setReminderModalMessage] = useState<string | null>(null);
+
+  const [shopName, setShopName] = useState("Gupta Kirana Store");
+  const [totalMarketBaaki, setTotalMarketBaaki] = useState(0);
+  const [todayUdhaar, setTodayUdhaar] = useState(0);
+  const [todayJama, setTodayJama] = useState(0);
+  const [customers, setCustomers] = useState<CustomerCardData[]>([]);
+  const [recentEntries, setRecentEntries] = useState<RecentEntryData[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Fetch live state from Supabase / API
+  const fetchDashboardData = async () => {
+    try {
+      const res = await fetch("/api/khata/state");
+      if (res.status === 401) {
+        router.push("/");
+        return;
+      }
+      const data = await res.json();
+      if (data.success) {
+        if (data.shop?.shopName) setShopName(data.shop.shopName);
+        setTotalMarketBaaki(data.totalPendingBalance || 0);
+        setTodayUdhaar(data.today?.udhaar || 0);
+        setTodayJama(data.today?.jama || 0);
+
+        if (data.customers) {
+          const mapped: CustomerCardData[] = data.customers.map((c: any) => ({
+            id: c.id,
+            name: c.name.toLowerCase(),
+            displayName: c.tag ? `${c.name} (${c.tag})` : c.name,
+            tag: c.tag,
+            subtitle: c.lastTxAt
+              ? `Last active: ${new Date(c.lastTxAt).toLocaleDateString()} • ${c.txCount || 0} entries`
+              : "Pre-loaded sample customer",
+            balance: c.balance || 0,
+            optedIn: Boolean(c.reminderOptIn),
+            status: c.balance > 0 ? "baaki" : "settled",
+          }));
+          setCustomers(mapped);
+        }
+
+        if (data.transactions) {
+          const mappedTxs: RecentEntryData[] = data.transactions.map((t: any) => ({
+            id: t.id,
+            customerName: t.customerName,
+            customerTag: t.customerTag,
+            type: t.type,
+            amount: t.amount,
+            time: new Date(t.transactionDate).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+            notes: t.notes,
+          }));
+          setRecentEntries(mappedTxs);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load dashboard data:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
 
   const filteredCustomers = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return INITIAL_CUSTOMERS;
-    return INITIAL_CUSTOMERS.filter(
+    if (!q) return customers;
+    return customers.filter(
       (c) =>
-        c.name.toLowerCase().includes(q) ||
+        c.name.includes(q) ||
         c.displayName.toLowerCase().includes(q) ||
         (c.tag && c.tag.toLowerCase().includes(q)),
     );
-  }, [searchQuery]);
+  }, [searchQuery, customers]);
 
-  const handleReminderClick = (customerId: string) => {
-    setRemindersSent((prev) => ({ ...prev, [customerId]: true }));
+  // Opt-in toggle via PATCH /api/khata/customers/[id]/opt-in
+  const handleToggleOptIn = async (customerId: string) => {
+    try {
+      const res = await fetch(`/api/khata/customers/${customerId}/opt-in`, {
+        method: "PATCH",
+      });
+      const data = await res.json();
+      if (data.success) {
+        setCustomers((prev) =>
+          prev.map((c) =>
+            c.id === customerId ? { ...c, optedIn: data.reminderOptIn } : c,
+          ),
+        );
+      }
+    } catch (err) {
+      console.error("Failed to toggle opt-in:", err);
+    }
+  };
+
+  // Polite Reminder via POST /api/khata/remind
+  const handleReminderClick = async (customerId: string) => {
+    try {
+      const res = await fetch("/api/khata/remind", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ customerId }),
+      });
+
+      const data = await res.json();
+
+      if (res.status === 403) {
+        alert("Compliance Rule: Customer has not opted in for reminders (PS2).");
+        return;
+      }
+
+      if (data.success && data.message) {
+        setRemindersSent((prev) => ({ ...prev, [customerId]: true }));
+        setReminderModalMessage(data.message);
+      }
+    } catch (err) {
+      console.error("Failed to send reminder:", err);
+    }
   };
 
   const handleMicClick = () => {
@@ -134,20 +165,46 @@ export default function DashboardPage() {
           <span className="font-headline text-title-lg text-on-surface leading-tight font-bold">
             Shoppr
           </span>
-          <span className="font-body text-body-sm text-on-surface-variant leading-tight">
-            Gupta Kirana Store
+          <span className="font-body text-body-sm text-on-surface-variant leading-tight truncate">
+            {shopName}
           </span>
         </div>
 
         {/* Live Badge */}
-        <span
-          role="status"
-          className="inline-flex items-center gap-gutter-sm rounded-full bg-surface-card border border-outline/10 px-gutter-md py-gutter-xs text-on-surface font-label shrink-0 shadow-sm"
+        <button
+          type="button"
+          onClick={handleMicClick}
+          aria-label="Open voice khata"
+          className="inline-flex items-center gap-gutter-sm rounded-full bg-surface-card border border-outline/10 px-gutter-md py-gutter-xs text-on-surface font-label shrink-0 shadow-sm hover:bg-surface-tint active:scale-95 transition-transform"
         >
           <span className="w-2 h-2 rounded-full bg-live animate-pulse shrink-0" aria-hidden="true" />
-          <span className="text-label-sm font-semibold">Listening for &apos;Shoppr&apos;</span>
-        </span>
+          <span className="text-label-sm font-semibold">Voice Khata</span>
+        </button>
       </header>
+
+      {/* Polite Reminder Message Modal */}
+      {reminderModalMessage && (
+        <aside
+          role="dialog"
+          aria-label="Generated Polite Reminder"
+          className="mx-page-margin mb-gutter-sm p-gutter-md bg-live-container text-on-live-container border border-live/30 rounded-lg shadow-md animate-in fade-in"
+        >
+          <div className="flex items-center justify-between pb-gutter-xs border-b border-live/20 mb-gutter-xs">
+            <span className="font-title text-title-sm font-bold flex items-center gap-gutter-xs">
+              <span className="material-symbols-outlined text-body-md">check_circle</span>
+              Polite Opt-In Reminder Generated
+            </span>
+            <button
+              type="button"
+              onClick={() => setReminderModalMessage(null)}
+              className="text-on-live-container text-label-xs font-bold hover:underline"
+            >
+              ✕
+            </button>
+          </div>
+          <p className="font-body text-body-sm italic">&ldquo;{reminderModalMessage}&rdquo;</p>
+        </aside>
+      )}
 
       {/* Main Content */}
       <main className="flex-1 px-page-margin pt-gutter-xs pb-dock-clearance flex flex-col gap-gutter-lg">
@@ -159,14 +216,14 @@ export default function DashboardPage() {
                 Total Market Baaki (Pending Credit)
               </p>
               <p className="font-headline text-display-lg-mobile text-on-primary tabular-nums font-bold">
-                ₹14,820
+                ₹{totalMarketBaaki.toLocaleString("en-IN")}
               </p>
               <p className="font-label text-label-sm text-on-primary/75">
-                18 Active Customers
+                {customers.length} Active Customers
               </p>
             </div>
             <span className="inline-flex items-center rounded-full bg-accent text-on-accent px-gutter-md py-gutter-xs font-label tabular-nums shrink-0 font-bold">
-              <span className="text-label-sm">+₹1,450 Today</span>
+              <span className="text-label-sm">+₹{todayUdhaar.toLocaleString("en-IN")} Today</span>
             </span>
           </article>
 
@@ -174,14 +231,14 @@ export default function DashboardPage() {
           <div className="grid grid-cols-2 gap-gutter-md items-stretch">
             <article className="h-full bg-surface-card border border-outline/10 rounded-lg p-gutter-md flex flex-col justify-between gap-gutter-xs shadow-sm">
               <p className="font-body text-body-sm text-on-surface-variant">Jama Today</p>
-              <p className="font-headline text-headline-md text-primary tabular-nums font-bold">
-                ₹800
+              <p className="font-headline text-headline-md text-live tabular-nums font-bold">
+                ₹{todayJama.toLocaleString("en-IN")}
               </p>
             </article>
             <article className="h-full bg-surface-card border border-outline/10 rounded-lg p-gutter-md flex flex-col justify-between gap-gutter-xs shadow-sm">
               <p className="font-body text-body-sm text-on-surface-variant">Opted-In Reminders</p>
               <p className="font-headline text-headline-md text-on-live-container tabular-nums font-bold text-live">
-                12 / 18
+                {customers.filter((c) => c.optedIn).length} / {customers.length}
               </p>
             </article>
           </div>
@@ -235,7 +292,7 @@ export default function DashboardPage() {
               aria-label="Search customer or speak"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search customer or speak 'Shoppr, Naresh ka total?'"
+              placeholder="Search customer: e.g. Ramesh, Naresh…"
               className="w-full rounded-full bg-surface-card border border-outline/10 pl-10 pr-gutter-lg py-gutter-sm font-body text-body-sm text-on-surface placeholder:text-primary-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary shadow-sm"
             />
           </div>
@@ -243,7 +300,11 @@ export default function DashboardPage() {
           {/* TAB 1: Customer Balance Cards */}
           {activeTab === "balances" && (
             <div id="customer-cards-list" className="flex flex-col gap-gutter-lg pt-gutter-xs">
-              {filteredCustomers.length === 0 ? (
+              {isLoading ? (
+                <div className="text-center py-8 text-primary-muted font-body text-body-sm">
+                  Loading ledger balances…
+                </div>
+              ) : filteredCustomers.length === 0 ? (
                 <div className="text-center py-8 text-on-surface-variant">
                   <p className="font-body text-body-md">No customer found matching &quot;{searchQuery}&quot;</p>
                 </div>
@@ -292,27 +353,35 @@ export default function DashboardPage() {
                           </p>
                         </div>
                         <p className="font-headline text-title-lg text-on-accent-container tabular-nums shrink-0 font-bold">
-                          ₹{customer.balance.toLocaleString()} Baaki
+                          ₹{customer.balance.toLocaleString("en-IN")} Baaki
                         </p>
                       </div>
 
                       <footer className="flex items-center justify-between gap-gutter-sm pt-gutter-sm border-t border-outline/10">
-                        {customer.optedIn ? (
-                          <span className="inline-flex items-center gap-gutter-xs rounded-full bg-live-container text-on-live-container px-gutter-md py-gutter-xs font-label">
-                            <span className="w-1.5 h-1.5 rounded-full bg-live" aria-hidden="true" />
-                            <span className="text-label-sm font-medium">Opted-in</span>
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center rounded-full bg-surface-subtle text-on-surface-variant px-gutter-md py-gutter-xs font-label">
-                            <span className="text-label-sm font-medium">Reminders Off</span>
-                          </span>
-                        )}
+                        {/* Interactive Toggle for Opt-in (PS2 Rule) */}
+                        <button
+                          type="button"
+                          onClick={() => handleToggleOptIn(customer.id)}
+                          aria-label={`Toggle reminder opt-in for ${customer.displayName}`}
+                          className="cursor-pointer"
+                        >
+                          {customer.optedIn ? (
+                            <span className="inline-flex items-center gap-gutter-xs rounded-full bg-live-container text-on-live-container px-gutter-md py-gutter-xs font-label hover:opacity-80">
+                              <span className="w-1.5 h-1.5 rounded-full bg-live" aria-hidden="true" />
+                              <span className="text-label-sm font-medium">Opted-in ✓</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center rounded-full bg-surface-subtle text-on-surface-variant px-gutter-md py-gutter-xs font-label hover:bg-surface-tint">
+                              <span className="text-label-sm font-medium">Opt-in Off (Click to turn on)</span>
+                            </span>
+                          )}
+                        </button>
 
                         {customer.optedIn ? (
                           <button
                             type="button"
                             onClick={() => handleReminderClick(customer.id)}
-                            className={`reminder-btn inline-flex items-center justify-center rounded-full border border-outline/10 px-gutter-md py-gutter-xs font-label transition-colors duration-state-change ease-state-change active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${
+                            className={`reminder-btn inline-flex items-center justify-center rounded-full border border-outline/10 px-gutter-md py-gutter-xs font-label transition-colors duration-state-change ease-state-change active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary cursor-pointer ${
                               isSent
                                 ? "bg-live-container text-on-live-container font-semibold"
                                 : "bg-surface-card text-on-surface hover:bg-surface-tint"
@@ -325,10 +394,10 @@ export default function DashboardPage() {
                         ) : (
                           <button
                             type="button"
-                            disabled
-                            className="inline-flex items-center justify-center rounded-full border border-outline/10 bg-surface-subtle text-on-surface-variant px-gutter-md py-gutter-xs font-label cursor-not-allowed opacity-75"
+                            onClick={() => alert("PS2 Compliance Rule: Please click 'Opt-in Off' to enable consent before sending reminders.")}
+                            className="inline-flex items-center justify-center rounded-full border border-outline/10 bg-surface-subtle text-on-surface-variant px-gutter-md py-gutter-xs font-label opacity-75 hover:opacity-100"
                           >
-                            <span className="text-label-sm">No Opt-In</span>
+                            <span className="text-label-sm">No Opt-In (Protected)</span>
                           </button>
                         )}
                       </footer>
@@ -342,40 +411,46 @@ export default function DashboardPage() {
           {/* TAB 2: Recent Voice Entries */}
           {activeTab === "recent" && (
             <div className="flex flex-col gap-gutter-md pt-gutter-xs">
-              {INITIAL_RECENT_ENTRIES.map((entry) => (
-                <article
-                  key={entry.id}
-                  className="bg-surface-card border border-outline/10 rounded-lg p-gutter-md flex items-center justify-between gap-gutter-md shadow-sm"
-                >
-                  <div className="flex flex-col min-w-0">
-                    <div className="flex items-center gap-gutter-sm">
-                      <span
-                        className={`text-label-sm px-2 py-0.5 rounded-full font-bold ${
-                          entry.type === "UDHAAR"
-                            ? "bg-accent-container text-on-accent-container"
-                            : "bg-live-container text-on-live-container"
-                        }`}
-                      >
-                        {entry.type === "UDHAAR" ? "Udhaar" : "Jama"}
-                      </span>
-                      <h4 className="font-title text-title-md text-on-surface font-semibold truncate">
-                        {entry.customerName}
-                      </h4>
-                    </div>
-                    <p className="font-body text-body-sm text-on-surface-variant mt-1">
-                      {entry.time} {entry.notes ? `• ${entry.notes}` : ""}
-                    </p>
-                  </div>
-
-                  <p
-                    className={`font-headline text-title-lg tabular-nums shrink-0 font-bold ${
-                      entry.type === "UDHAAR" ? "text-on-accent-container" : "text-live"
-                    }`}
+              {recentEntries.length === 0 ? (
+                <div className="text-center py-8 text-primary-muted font-body text-body-sm">
+                  No voice transactions recorded yet.
+                </div>
+              ) : (
+                recentEntries.map((entry) => (
+                  <article
+                    key={entry.id}
+                    className="bg-surface-card border border-outline/10 rounded-lg p-gutter-md flex items-center justify-between gap-gutter-md shadow-sm"
                   >
-                    {entry.type === "UDHAAR" ? "+" : "-"}₹{entry.amount.toLocaleString()}
-                  </p>
-                </article>
-              ))}
+                    <div className="flex flex-col min-w-0">
+                      <div className="flex items-center gap-gutter-sm">
+                        <span
+                          className={`text-label-sm px-2 py-0.5 rounded-full font-bold ${
+                            entry.type === "UDHAAR"
+                              ? "bg-accent-container text-on-accent-container"
+                              : "bg-live-container text-on-live-container"
+                          }`}
+                        >
+                          {entry.type === "UDHAAR" ? "Udhaar" : "Jama"}
+                        </span>
+                        <h4 className="font-title text-title-md text-on-surface font-semibold truncate">
+                          {entry.customerName} {entry.customerTag ? `(${entry.customerTag})` : ""}
+                        </h4>
+                      </div>
+                      <p className="font-body text-body-sm text-on-surface-variant mt-1">
+                        {entry.time} {entry.notes ? `• ${entry.notes}` : ""}
+                      </p>
+                    </div>
+
+                    <p
+                      className={`font-headline text-title-lg tabular-nums shrink-0 font-bold ${
+                        entry.type === "UDHAAR" ? "text-on-accent-container" : "text-live"
+                      }`}
+                    >
+                      {entry.type === "UDHAAR" ? "+" : "-"}₹{entry.amount.toLocaleString("en-IN")}
+                    </p>
+                  </article>
+                ))
+              )}
             </div>
           )}
         </section>
@@ -389,7 +464,7 @@ export default function DashboardPage() {
         {/* Live Voice Q&A Preview */}
         <div className="flex flex-col items-center text-center gap-gutter-sm">
           <p className="font-body text-body-md text-on-primary text-pretty">
-            &ldquo;Shoppr, kitna baaki hai Naresh bhai ko?&rdquo;
+            &ldquo;Shoppr, Naresh bhai ka 340 udhaar likh do&rdquo;
           </p>
           <span
             role="status"
@@ -402,7 +477,7 @@ export default function DashboardPage() {
             >
               volume_up
             </span>
-            <span className="text-label-sm font-medium">Naresh bhai ka total ₹1,840 baaki hai.</span>
+            <span className="text-label-sm font-medium">Sub-2s Alexa-style spoken ledger confirmation</span>
           </span>
         </div>
 
