@@ -100,7 +100,7 @@ export async function startDemoShop(): Promise<never> {
   });
 
   await createSession(shop.id);
-  redirect("/shoprr");
+  redirect("/dashboard");
 }
 
 /**
@@ -136,7 +136,7 @@ export async function openOrCreateShop(
     }
 
     await createSession(shop.id);
-    redirect("/shoprr");
+    redirect("/dashboard");
   } else {
     // Mode === "new"
     if (!shopName) {
@@ -158,7 +158,7 @@ export async function openOrCreateShop(
     });
 
     await createSession(shop.id);
-    redirect("/shoprr");
+    redirect("/dashboard");
   }
 }
 

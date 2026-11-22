@@ -6,7 +6,7 @@ export default async function EntryQuickSetupPage() {
   const session = await getSession();
 
   if (session?.shopId) {
-    redirect("/shoprr");
+    redirect("/dashboard");
   }
 
   return <EntryQuickSetupClient />;
